@@ -51,12 +51,12 @@ def main():
     page = json.loads(cmd('gh', 'api', f'repos/{repo}/pages'))
     if not page.get('html_url'):
         raise RuntimeError('GitHub Pages is not enabled')
-    if cmd('git', 'status', '--porcelain', '--untracked-files=normal').strip() != f'?? site/{args.slug}/':
-        # Existing clean index and target path are allowed; any other changes require review.
-        dirty = cmd('git', 'status', '--porcelain', '--untracked-files=normal')
-        if dirty and any('site/' + args.slug + '/' not in line for line in dirty.splitlines()):
-            raise RuntimeError('Unrelated git changes exist; review them before publishing')
-    cmd('git', 'add', '--', str(target.relative_to(ROOT)))
+    # Show each untracked file individually so an unrelated file cannot hide under site/.
+    dirty = cmd('git', 'status', '--porcelain', '--untracked-files=all')
+    allowed = str(target.relative_to(ROOT))
+    if dirty and any(line[3:] != allowed for line in dirty.splitlines()):
+        raise RuntimeError('Unrelated git changes exist; review them before publishing')
+    cmd('git', 'add', '--', allowed)
     if cmd('git', 'diff', '--cached', '--name-only'):
         cmd('git', 'commit', '-m', f'Publish HTML: {args.slug}')
         cmd('git', 'push', 'origin', 'main')
