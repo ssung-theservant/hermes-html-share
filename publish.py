@@ -12,6 +12,27 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parent
 
+# Fail closed on likely secrets and personal data. Print categories/line numbers only.
+SENSITIVE_PATTERNS = {
+    'private key': re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'),
+    'access token': re.compile(r'(?i)\b(?:gh[pousr]_|github_pat_|sk-(?:proj-|ant-|live-)?)[A-Za-z0-9_\-]{12,}'),
+    'authorization header': re.compile(r'(?i)authorization\s*[:=]\s*["\']?bearer\s+[A-Za-z0-9._-]{10,}'),
+    'credential assignment': re.compile(r'(?i)\b(?:api[_-]?key|secret|password|passwd|access[_-]?token|client[_-]?secret)\b\s*[=:]\s*["\'][^"\'\s]{8,}["\']'),
+    'email address': re.compile(r'(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b'),
+    'Korean mobile number': re.compile(r'(?<!\d)01[016789][- ]?\d{3,4}[- ]?\d{4}(?!\d)'),
+    'US SSN': re.compile(r'(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)'),
+}
+
+def scan_html(data):
+    text = data.decode('utf-8', errors='replace')
+    found = []
+    for line_no, line in enumerate(text.splitlines(), 1):
+        for category, pattern in SENSITIVE_PATTERNS.items():
+            if pattern.search(line):
+                found.append(f'{category} (line {line_no})')
+    if found:
+        raise RuntimeError('Sensitive content suspected; publication blocked: ' + ', '.join(found[:20]))
+
 def cmd(*args, capture=True):
     p = subprocess.run(args, cwd=ROOT, text=True, capture_output=capture)
     if p.returncode:
@@ -32,6 +53,7 @@ def main():
     data = source.read_bytes()
     if not data.strip():
         ap.error('HTML file is empty')
+    scan_html(data)
     target = ROOT / 'site' / args.slug / 'index.html'
     if target.exists() and target.read_bytes() != data:
         ap.error(f'{args.slug} already exists with different content; choose a new slug to avoid overwriting')
